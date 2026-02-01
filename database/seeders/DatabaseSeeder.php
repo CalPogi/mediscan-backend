@@ -10,21 +10,20 @@ class DatabaseSeeder extends Seeder
 {
     use WithoutModelEvents;
 
-    /**
-     * Seed the application's database.
-     */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
-
         $this->call([
             SchoolDataSeeder::class,
             MedicationSeeder::class,
         ]);
+
+        try {
+            User::factory()->create([
+                'name' => 'Test User',
+                'email' => 'test@example.com',
+            ]);
+        } catch (\Exception $e) {
+            echo "User creation failed, but School Data is safe.\n";
+        }
     }
 }

@@ -1,9 +1,17 @@
 #!/bin/sh
 
-# 1. Reset Database and Seed (Fixes your 500 error)
-echo "Migrating database..."
-php artisan migrate:fresh --seed --force
+echo "-------------------------------------"
+echo "  STARTING DEPLOYMENT SCRIPT"
+echo "-------------------------------------"
 
-# 2. Start Apache Server
-echo "Starting server..."
+echo "1. Running Migrations..."
+php artisan migrate:fresh --force -vvv
+
+echo "2. Running Seeding..."
+php artisan db:seed --force -vvv
+
+echo "-------------------------------------"
+echo "  SETUP COMPLETE - STARTING APACHE"
+echo "-------------------------------------"
+
 exec apache2-foreground

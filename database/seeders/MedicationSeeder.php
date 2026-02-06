@@ -29,6 +29,14 @@ class MedicationSeeder extends Seeder
                 'stock_level' => 50,
                 'created_at' => now(),
                 'updated_at' => now(),
+            ],
+            [
+                'name' => 'Sanitary Napkin',
+                'dosage' => '1 Pad',
+                'hardware_slot_id' => 3,
+                'stock_level' => 30,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]
         ]);
     }

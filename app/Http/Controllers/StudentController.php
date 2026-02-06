@@ -39,6 +39,7 @@ class StudentController extends Controller
         $validated = $request->validate([
             'lrn' => 'required|unique:students,lrn',
             'name' => 'required|string',
+            'sex'  => 'required|in:Male,Female',
             'section_id' => 'required|exists:sections,id',
             'guardian_name' => 'required|string',
             'guardian_contact' => 'required|string',

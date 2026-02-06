@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('lrn')->unique();
             $table->string('name');
+            $table->string('sex');
 
             $table->foreignId('section_id')->constrained();
 

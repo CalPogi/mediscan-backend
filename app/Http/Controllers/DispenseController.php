@@ -6,18 +6,9 @@ use Illuminate\Http\Request;
 use App\Models\Student;
 use App\Models\Medication;
 use App\Models\Dispensal;
-use Carbon\Carbon;
 
 class DispenseController extends Controller
 {
-    /**
-     * Helper to verify the ESP8266 Hardware API Key
-     */
-    private function isHardwareAuthenticated(Request $request)
-    {
-        return $request->header('X-API-KEY') === env('ESP_API_KEY');
-    }
-
     /**
      * 1. Triggered by your web frontend when a user clicks "Dispense"
      */
@@ -49,25 +40,30 @@ class DispenseController extends Controller
      */
     public function checkPending(Request $request)
     {
-        if (!$this->isHardwareAuthenticated($request)) {
+        // Check if API Key exists in .env or Render settings
+        $configuredKey = env('ESP_API_KEY', 'hopiamanipopcorn');
+
+        if ($request->header('X-API-KEY') !== $configuredKey) {
             return response()->json(['error' => 'Unauthorized Hardware'], 401);
         }
 
-        // 🚨 FIX: Removed the Carbon::now() 5-minute window check to bypass timezone issues
         $pending = Dispensal::where('status', 'pending')
-                            ->with('medication')
+                            ->with('medication') // Ensure medication is loaded
                             ->orderBy('created_at', 'asc')
                             ->first();
 
-        if ($pending) {
-            $pending->update(['status' => 'processing']);
+        if ($pending && $pending->medication) {
+            // Only dispense if a slot ID is actually set
+            $slot = $pending->medication->hardware_slot_id ?? 0;
 
-            return response()->json([
-                'command' => 'DISPENSE',
-                'dispensal_id' => $pending->id,
-                'slot' => $pending->medication->hardware_slot_id,
-                'med_id' => $pending->medication->id
-            ]);
+            if ($slot > 0) {
+                $pending->update(['status' => 'processing']);
+                return response()->json([
+                    'command' => 'DISPENSE',
+                    'dispensal_id' => $pending->id,
+                    'slot' => (int)$slot
+                ]);
+            }
         }
 
         return response()->json(['command' => 'IDLE']);
@@ -78,7 +74,9 @@ class DispenseController extends Controller
      */
     public function confirmDispense(Request $request, $id)
     {
-        if (!$this->isHardwareAuthenticated($request)) {
+        $configuredKey = env('ESP_API_KEY', 'hopiamanipopcorn');
+
+        if ($request->header('X-API-KEY') !== $configuredKey) {
             return response()->json(['error' => 'Unauthorized Hardware'], 401);
         }
 

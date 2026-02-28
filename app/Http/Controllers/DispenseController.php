@@ -53,8 +53,8 @@ class DispenseController extends Controller
             return response()->json(['error' => 'Unauthorized Hardware'], 401);
         }
 
+        // 🚨 FIX: Removed the Carbon::now() 5-minute window check to bypass timezone issues
         $pending = Dispensal::where('status', 'pending')
-                            ->where('created_at', '>=', Carbon::now()->subMinutes(5))
                             ->with('medication')
                             ->orderBy('created_at', 'asc')
                             ->first();

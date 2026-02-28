@@ -16,3 +16,6 @@ Route::post('/register', [StudentController::class, 'register']);
 Route::post('/assess', [AssessmentController::class, 'evaluate']);
 
 Route::post('/dispense', [DispenseController::class, 'dispense']);
+
+Route::get('/hardware/check-pending', [DispenseController::class, 'checkPending']);
+Route::post('/hardware/confirm-dispense/{id}', [DispenseController::class, 'confirmDispense']);

@@ -3,23 +3,23 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use App\Models\Student;
 use App\Models\Medication;
 use App\Models\Dispensal;
 
 class DispenseController extends Controller
 {
+    /**
+     * 1. Triggered by your web frontend when a user clicks "Dispense"
+     */
     public function dispense(Request $request)
     {
-
         $student = Student::where('lrn', $request->lrn)->first();
         $med = Medication::find($request->med_id);
 
         if (!$student || !$med) {
             return response()->json(['error' => 'Invalid Data'], 400);
         }
-
 
         $log = Dispensal::create([
             'student_id' => $student->id,
@@ -28,26 +28,57 @@ class DispenseController extends Controller
             'status' => 'pending'
         ]);
 
-        // Hardware Trigger - Replace with IP of the ESP32
-        $esp32_ip = 'http://192.168.1.50/api/dispense';
+        return response()->json([
+            'status' => 'queued',
+            'dispensal_id' => $log->id,
+            'message' => 'Waiting for hardware to pick up request'
+        ]);
+    }
 
-        try {
-            $response = Http::timeout(5)->post($esp32_ip, [
-                'slot' => $med->hardware_slot_id,
-                'med_id' => $med->id
+    /**
+     * 2. The API Endpoint the ESP32 calls every few seconds
+     */
+    public function checkPending()
+    {
+        $pending = Dispensal::where('status', 'pending')
+                            ->with('medication')
+                            ->orderBy('created_at', 'asc')
+                            ->first();
+
+        if ($pending) {
+            return response()->json([
+                'command' => 'dispense',
+                'dispensal_id' => $pending->id,
+                'slot' => $pending->medication->hardware_slot_id,
+                'med_id' => $pending->medication->id
             ]);
-
-            if ($response->successful()) {
-                $log->update(['status' => 'success']);
-                $med->decrement('stock_level');
-                return response()->json(['status' => 'success']);
-            } else {
-                $log->update(['status' => 'failed']);
-                return response()->json(['status' => 'error'], 500);
-            }
-        } catch (\Exception $e) {
-            $log->update(['status' => 'failed']);
-            return response()->json(['status' => 'error', 'message' => 'Hardware Offline'], 500);
         }
+
+        return response()->json(['command' => 'wait']);
+    }
+
+    /**
+     * 3. The API Endpoint the ESP32 calls AFTER moving the servo
+     */
+    public function confirmDispense($id)
+    {
+        $log = Dispensal::find($id);
+
+        if (!$log) {
+            return response()->json(['error' => 'Log not found'], 404);
+        }
+
+        if ($log->status === 'success') {
+            return response()->json(['status' => 'already confirmed']);
+        }
+
+        $log->update(['status' => 'success']);
+
+        $med = Medication::find($log->medication_id);
+        if ($med) {
+            $med->decrement('stock_level');
+        }
+
+        return response()->json(['status' => 'confirmed']);
     }
 }

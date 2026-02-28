@@ -40,29 +40,33 @@ class DispenseController extends Controller
      */
     public function checkPending(Request $request)
     {
-        // Check if API Key exists in .env or Render settings
         $configuredKey = env('ESP_API_KEY', 'hopiamanipopcorn');
 
         if ($request->header('X-API-KEY') !== $configuredKey) {
             return response()->json(['error' => 'Unauthorized Hardware'], 401);
         }
 
+        // REMOVED ->with('medication') to fix the 500 Crash
         $pending = Dispensal::where('status', 'pending')
-                            ->with('medication') // Ensure medication is loaded
                             ->orderBy('created_at', 'asc')
                             ->first();
 
-        if ($pending && $pending->medication) {
-            // Only dispense if a slot ID is actually set
-            $slot = $pending->medication->hardware_slot_id ?? 0;
+        if ($pending) {
+            // Find the medication manually to avoid relationship errors
+            $medication = Medication::find($pending->medication_id);
+            $slot = $medication ? $medication->hardware_slot_id : 0;
 
             if ($slot > 0) {
+                // Good to go! Lock it and send to hardware.
                 $pending->update(['status' => 'processing']);
                 return response()->json([
                     'command' => 'DISPENSE',
                     'dispensal_id' => $pending->id,
                     'slot' => (int)$slot
                 ]);
+            } else {
+                // 🛡️ JAM PREVENTION: If no valid slot is found, mark as failed so it doesn't block the line forever
+                $pending->update(['status' => 'failed']);
             }
         }
 

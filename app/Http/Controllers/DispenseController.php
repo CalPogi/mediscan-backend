@@ -6,9 +6,18 @@ use Illuminate\Http\Request;
 use App\Models\Student;
 use App\Models\Medication;
 use App\Models\Dispensal;
+use Carbon\Carbon;
 
 class DispenseController extends Controller
 {
+    /**
+     * Helper to verify the ESP8266 Hardware API Key
+     */
+    private function isHardwareAuthenticated(Request $request)
+    {
+        return $request->header('X-API-KEY') === env('ESP_API_KEY');
+    }
+
     /**
      * 1. Triggered by your web frontend when a user clicks "Dispense"
      */
@@ -36,49 +45,60 @@ class DispenseController extends Controller
     }
 
     /**
-     * 2. The API Endpoint the ESP32 calls every few seconds
+     * 2. The API Endpoint the ESP32/ESP8266 calls every few seconds
      */
-    public function checkPending()
+    public function checkPending(Request $request)
     {
+        if (!$this->isHardwareAuthenticated($request)) {
+            return response()->json(['error' => 'Unauthorized Hardware'], 401);
+        }
+
         $pending = Dispensal::where('status', 'pending')
+                            ->where('created_at', '>=', Carbon::now()->subMinutes(5))
                             ->with('medication')
                             ->orderBy('created_at', 'asc')
                             ->first();
 
         if ($pending) {
+            $pending->update(['status' => 'processing']);
+
             return response()->json([
-                'command' => 'dispense',
+                'command' => 'DISPENSE',
                 'dispensal_id' => $pending->id,
                 'slot' => $pending->medication->hardware_slot_id,
                 'med_id' => $pending->medication->id
             ]);
         }
 
-        return response()->json(['command' => 'wait']);
+        return response()->json(['command' => 'IDLE']);
     }
 
     /**
-     * 3. The API Endpoint the ESP32 calls AFTER moving the servo
+     * 3. The API Endpoint the hardware calls AFTER dropping the pill
      */
-    public function confirmDispense($id)
+    public function confirmDispense(Request $request, $id)
     {
+        if (!$this->isHardwareAuthenticated($request)) {
+            return response()->json(['error' => 'Unauthorized Hardware'], 401);
+        }
+
         $log = Dispensal::find($id);
 
         if (!$log) {
             return response()->json(['error' => 'Log not found'], 404);
         }
 
-        if ($log->status === 'success') {
-            return response()->json(['status' => 'already confirmed']);
+        if ($log->status === 'completed') {
+            return response()->json(['status' => 'already completed']);
         }
 
-        $log->update(['status' => 'success']);
+        $log->update(['status' => 'completed']);
 
         $med = Medication::find($log->medication_id);
         if ($med) {
             $med->decrement('stock_level');
         }
 
-        return response()->json(['status' => 'confirmed']);
+        return response()->json(['status' => 'completed']);
     }
 }

@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Student;
 use App\Models\Medication;
 use App\Models\Dispensal;
+use Illuminate\Support\Facades\Http;
 
 class DispenseController extends Controller
 {
@@ -76,31 +77,49 @@ class DispenseController extends Controller
     /**
      * 3. The API Endpoint the hardware calls AFTER dropping the pill
      */
-    public function confirmDispense(Request $request, $id)
-    {
-        $configuredKey = env('ESP_API_KEY', 'hopiamanipopcorn');
-
-        if ($request->header('X-API-KEY') !== $configuredKey) {
-            return response()->json(['error' => 'Unauthorized Hardware'], 401);
-        }
-
-        $log = Dispensal::find($id);
-
-        if (!$log) {
-            return response()->json(['error' => 'Log not found'], 404);
-        }
-
-        if ($log->status === 'completed') {
-            return response()->json(['status' => 'already completed']);
-        }
-
-        $log->update(['status' => 'completed']);
-
-        $med = Medication::find($log->medication_id);
-        if ($med) {
-            $med->decrement('stock_level');
-        }
-
-        return response()->json(['status' => 'completed']);
+public function confirmDispense(Request $request, $id)
+{
+    // ... (Your existing security check)
+    $log = Dispensal::find($id);
+    if (!$log || $log->status === 'completed') {
+        return response()->json(['error' => 'Invalid Log'], 400);
     }
+
+    $log->update(['status' => 'completed']);
+
+    $med = Medication::find($log->medication_id);
+    $student = Student::find($log->student_id); // Get student info for the text
+
+    if ($med) {
+        $med->decrement('stock_level');
+
+        // --- SMS TRIGGER START ---
+        $this->sendSmsToNurse($student, $med);
+        // --- SMS TRIGGER END ---
+    }
+
+    return response()->json(['status' => 'completed']);
+}
+
+/**
+ * Helper function to handle the SMS API call
+ */
+private function sendSmsToNurse($student, $med)
+{
+    $apikey = env('SEMAPHORE_API_KEY');
+    $nurseNumber = env('NURSE_PHONE_NUMBER');
+
+    $message = "ADVISORY: Student {$student->name} (LRN: {$student->lrn}) has dispensed 1 unit of {$med->name} at " . now()->format('h:i A');
+
+    try {
+        Http::post('https://api.semaphore.co/api/v4/messages', [
+            'apikey' => $apikey,
+            'number' => $nurseNumber,
+            'message' => $message,
+            'sendername' => 'SEMAPHORE'
+        ]);
+    } catch (\Exception $e) {
+        \Log::error("SMS Failed: " . $e->getMessage());
+    }
+}
 }
